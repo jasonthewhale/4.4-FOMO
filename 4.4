@@ -1,0 +1,433 @@
+##4.4  研讨：FOMO
+
+在这一部分的讨论中，我们会设计一个程序，允许投资者创建一个拍卖会，参与者可以在购买门票。投资人设定门票价格和一个相对期限。当买家购买机票时，最后期限将被重置。当截止期限到来时，最后一个买到门票的人赢得所有的奖池余额。这个程序基于加密货币游戏，[FOMO3DGame](https://fomo3d.hostedwiki.co/)。
+
+这个讨论利用[参与者](https://docs.reach.sh/ref-model.html#%28tech._participant._clas%29)这一类别来代表买家，这使我们能够用一个通用的方式处理多个参与者。
+
+<<< 这一部分的研讨独立于所有其他部分
+
+我们假定你在一个名为~/reach/workshop-fomo:的目录中浏览讨论内容
+
+**$** mkdir -p ~/reach/workshop-fomo
+
+并且你有一个Reach的副本[下载](https://docs.reach.sh/install.html)在~/reach这个路径，所以你可以写
+
+ **$** ../reach version
+
+接着它机会开始运行Reach.
+
+你应该首先初始化你的Reach程序:
+
+ **$** ../reach init
+
+
+
+____
+
+#4.4.1 问题分析
+
+首先，我们应该思考应用程序的细节，并且回答一些问题来使程序的执行合理化。
+
+你应该在你的Reach程序(index.rsh)里用注释写下下面问题的答案。/* Remember comments are written like this. */
+
+-谁参与了这个应用程序？
+
+-在程序开始时他们知道什么信息？
+
+-他们将在程序里发现和使用什么信息？
+
+-在程序运行中什么资金改变了拥有权，如何实现的？
+
+<center>停止！</center>
+
+<center>以注释的形式写下这段程序的问题分析。</center>
+
+
+
+让我们看看你的答案与我们的相比如何：
+
+-这段程序里有两类人：一个部署拍卖的投资者和那些门票的买方。
+
+-这位投资者在这段程序开始时就知道截止时间和门票价格。
+
+-那些买方在应用程序开始时不知道任何有关截止时间和门票价格的信息。
+
+-那位投资者在程序执行中不了解任何信息。
+
+-买方在程序执行中知晓门票价格和截止时间。
+
+-买方在程序执行期间不断向余额中添加资金直到一位买家赢得所有余额。
+
+如果你的一些回答跟我们的有出入也可以！
+
+
+
+----
+
+#4.4.2 数据定义
+
+完成问题分析后，我们需要决定我们将如何表示程序中的信息：
+
+-什么数据类型将代表投资者设定的截止时间？
+
+-什么数据类型将代表投资者设定的门票价格？
+
+-什么数据类型将代表买方购买门票的决定？
+
+既然我们已经决定好用那些数据类型，接下来我们需要决定程序将如何获得这些信息。我们要为每一位参与者概述[参与者交互界面](https://docs.reach.sh/ref-programs-module.html#%28tech._participant._interact._interface%29)。
+
+-投资者将会使用什么样的[参与者交互界面](https://docs.reach.sh/ref-programs-module.html#%28tech._participant._interact._interface%29)？
+
+-买方将会使用什么样的[参与者交互界面](https://docs.reach.sh/ref-programs-module.html#%28tech._participant._interact._interface%29)？
+
+完成本节后，请重新回顾问题分析部分。无论何时，只要一个参与者从某些知识开始，那就是[交互对象](https://docs.reach.sh/ref-programs-local.html#%28reach._%28%28interact%29%29%29)的一个字段。如果他们了解到一些东西，那么它将成为一个函数的参数。如果他们稍后提供了一些东西，那它就会成为一个函数的解。
+
+你应该在你的Reach文件(index.rsh)中为每一位参与者写下你的答案，作为[参与者交互界面](https://docs.reach.sh/ref-programs-module.html#%28tech._participant._interact._interface%29)。
+
+<center>停止！</center>
+
+<center>为这段程序写下数据定义作为讲解。</center>
+
+
+
+让我们将你的答案与我们的相比较：
+
+-截止时间将以一个[UInt](https://docs.reach.sh/ref-programs-compute.html#%28reach._%28%28.U.Int%29%29%29)表示，因为他是一个相对时间delta，在区块数中表示一个变量。
+
+-门票价格将以一个[UInt](https://docs.reach.sh/ref-programs-compute.html#%28reach._%28%28.U.Int%29%29%29)表示
+
+-购买一张门票的决定将被表示为一个函数<p>Fun([UInt],Bool)</p>
+
+我们的[参与者交互界面](https://docs.reach.sh/ref-programs-module.html#%28tech._participant._interact._interface%29)还添加了一些方便的日志记录功能，到目前为止它看起来像这样：
+
+[workshop-fomo/index.rsh](https://github.com/reach-sh/reach-lang/blob/master/examples/workshop-fomo/index.rsh#L3-L21) 
+
+```js
+..    // ...
+ 3    const CommonInterface = {
+ 4    // Show the address of winner
+ 5    showOutcome: Fun([Address], Null),
+ 6    };
+ 7    
+ 8    const FunderInterface = {
+ 9    ...CommonInterface,
+10    getParams: Fun([], Object({
+11      // relative deadline
+12      deadline: UInt,
+13      ticketPrice: UInt,
+14    })),
+15    };
+16    
+17    const BuyerInterface = {
+18    ...CommonInterface,
+19    shouldBuyTicket: Fun([UInt], Bool),
+20    showPurchase: Fun([Address], Null),
+21    };
+..    // ...
+```
+
+此时，尽管你可能想要使用一个占位符来作为实际值，但是你可以修改你的JavaScript文件(index.mjs)来包含这些值的定义。当你正在写一个Reach程序时，特别是在前期，你应该并排打开这两个文件，并在确定[参与者交互界面](https://docs.reach.sh/ref-programs-module.html#%28tech._participant._interact._interface%29)时一并更新它们。
+
+----
+
+#4.4.3 建立通信
+
+去中心化的应用程序的一个重要方面是参与者之间的转账和交流。我们应该在我们的程序里写下该结构作为注释，来使其充当一个大纲的功能并指导我们执行程序。例如，对于“石头剪刀布”的教程版本，我们也许会写：
+
+```html
+// Alice广播了赌注并且支付它
+// Bob接受了赌注并且支付它
+// While there's a draw
+// Alice秘密地广播了她的出手
+// Bob公开地广播了他的出手
+// Alice显示了她的出手
+// 共识保证Alice展示的出手结果和之前一致
+// 共识支付赌金
+```
+
+你现在应该做这个，在你的Reach程序里(index.rsh)。
+
+
+
+<center>停止！</center>
+
+<center>为这段程序写下通信模式作为注释。</center>
+
+
+
+这是我们为的大纲写的东西：
+
+```js
+// 1. 投资者广播了门票价格和截止时间
+// 2. 当截止时间还没到时:
+//     2a. 允许买家购买一张门票
+//     2b. 记录最后一位买家
+// 3. 将余额转账给最后一个买门票的人
+```
+
+
+
+
+
+<center>停止！</center>
+
+<center>为这段程序写下通信模式作为代码。</center>
+
+
+
+你的应用程序主体应该看起来像这样：
+
+```js
+// 1. 投资者广播了门票价格和截止时间
+Funder.publish(ticketPrice, deadline);
+
+const [ keepGoing, winner, ticketsSold ] =
+  // 2. 当截止时间还没到时
+  parallelReduce([ true, Funder, 0 ])
+    .invariant(balance() == ticketsSold * ticketPrice)
+    .while(keepGoing)
+    .case(
+      Buyer,
+      // 2a. 允许买家购买一张门票
+      (() => ({
+        when: declassify(interact.shouldBuyTicket(ticketPrice)),
+      })),
+      (() => ticketPrice),
+      (() => {
+        const buyer = this;
+        Buyer.only(() => interact.showPurchase(buyer));
+        // 2b. 记录最后一位买家
+        return [ true, buyer, ticketsSold + 1 ];
+      })
+    )
+    .timeout(deadline, () => {
+      race(Buyer, Funder).publish();
+      return [ false, winner, ticketsSold ]});
+
+// 3. 将余额转账给最后一个买门票的人
+transfer(balance()).to(winner);
+commit();
+```
+
+我们使用[parallelReduce](https://docs.reach.sh/workshop-fomo.html)来允许买家在截止日期过去之前购买门票并累积当前赢家。我们保持不变，余额必须等于卖出的门票数乘以门票价格。
+
+
+
+---
+
+#4.4.4 主张插入
+
+这段程序除了[代币线性性质](https://docs.reach.sh/ref-model.html#%28tech._token._linearity._property%29)外，没有一些有趣的属性来证明为主张。唯一有趣的属性是[parallelReduce](https://docs.reach.sh/workshop-fomo.html)的不变性，这声明了余额必须等于卖出的门票数乘以门票价格。
+
+
+
+---
+
+4.4.5 交互介绍
+
+接下来，我们需要适当的调用来[交互](https://docs.reach.sh/ref-programs-local.html#%28reach._%28%28interact%29%29%29)。在这种情况下，我们的程序非常简单，所以我们认为不需要进一步的讨论你也会做得很好。
+
+
+
+<center>停止！</center>
+
+<center>将交互调用插入到程序的前端。</center>
+
+
+
+现在让我们看看完整的程序：
+
+[workshop-fomo/index.rsh](https://github.com/reach-sh/reach-lang/blob/master/examples/workshop-fomo/index.rsh) 
+
+```js
+1    'reach 0.1';
+ 2    
+ 3    const CommonInterface = {
+ 4      // 展示赢家的地址
+ 5      showOutcome: Fun([Address], Null),
+ 6    };
+ 7    
+ 8    const FunderInterface = {
+ 9      ...CommonInterface,
+10      getParams: Fun([], Object({
+11        // 相对截止时间
+12        deadline: UInt,
+13        ticketPrice: UInt,
+14      })),
+15    };
+16    
+17    const BuyerInterface = {
+18      ...CommonInterface,
+19      shouldBuyTicket: Fun([UInt], Bool),
+20      showPurchase: Fun([Address], Null),
+21    };
+22    
+23    export const main = Reach.App(
+24      { },
+25      [
+26        Participant('Funder', FunderInterface),
+27        ParticipantClass('Buyer', BuyerInterface),
+28      ],
+29      (Funder, Buyer) => {
+30    
+31        // 助手向每个人展示结果
+32        const showOutcome = (who) =>
+33          each([Funder, Buyer], () => {
+34            interact.showOutcome(who); });
+35    
+36        // 让投资者广播门票的价格和截止时间
+37        Funder.only(() => {
+38          const { ticketPrice, deadline } =
+39            declassify(interact.getParams());
+40        });
+41        Funder.publish(ticketPrice, deadline);
+42    
+43        // 允许买家购买门票直到超时
+44        const [ keepGoing, winner, ticketsSold ] =
+45          parallelReduce([ true, Funder, 0 ])
+46            .invariant(balance() == ticketsSold * ticketPrice)
+47            .while(keepGoing)
+48            .case(
+49              Buyer,
+50              (() => ({
+51                when: declassify(interact.shouldBuyTicket(ticketPrice)),
+52              })),
+53              (() => ticketPrice),
+54              (() => {
+55                const buyer = this;
+56                Buyer.only(() => interact.showPurchase(buyer));
+57                return [ true, buyer, ticketsSold + 1 ];
+58              })
+59            )
+60            .timeout(deadline, () => {
+61              Anybody.publish();
+62              return [ false, winner, ticketsSold ]; });
+63    
+64        // 买走最后一张票的人获胜并收到奖金
+65        transfer(balance()).to(winner);
+66        commit();
+67        showOutcome(winner);
+68      });
+
+```
+
+
+
+----
+
+#4.4.6 部署决策
+
+接下来，是时候测试我们的程序了。按照惯例，我们将提出一个完全自动化的测试部署，而不是一个交互式的测试。
+
+该程序相当容易测试。我们只需为投资者和任意数量的买家建立测试账户。买方购买门票的决定将仅依赖于生成的一个随机布尔值。
+
+
+
+<center>停止！</center>
+
+<center>确定你将如何部署并使用这个应用程序。</center>
+
+
+
+这是我们写的JavaScript[前端](https://docs.reach.sh/ref-model.html#(tech._frontend)) ：
+
+[workshop-fomo/index.mjs](https://github.com/reach-sh/reach-lang/blob/master/examples/workshop-fomo/index.mjs) 
+
+```js
+1    import {loadStdlib} from '@reach-sh/stdlib';
+  2    import * as backend from './build/index.main.mjs';
+  3    
+  4    const numOfBuyers = 10;
+  5    
+  6    (async () => {
+  7      const stdlib = await loadStdlib();
+  8      const startingBalance = stdlib.parseCurrency(100);
+  9    
+ 10      const accFunder = await stdlib.newTestAccount(startingBalance);
+ 11      const accBuyerArray = await Promise.all(
+ 12        Array.from({ length: numOfBuyers }, () =>
+ 13          stdlib.newTestAccount(startingBalance)
+ 14        )
+ 15      );
+ 16    
+ 17      const ctcFunder = accFunder.deploy(backend);
+ 18      const ctcInfo   = ctcFunder.getInfo();
+ 19    
+ 20      const funderParams = {
+ 21        ticketPrice: stdlib.parseCurrency(5),
+ 22        deadline: 5,
+ 23      };
+ 24    
+ 25      await Promise.all([
+ 26        backend.Funder(ctcFunder, {
+ 27          showOutcome: (addr) => console.log(`Funder saw ${addr} won.`),
+ 28          getParams: () => funderParams,
+ 29        }),
+ 30      ].concat(
+ 31        accBuyerArray.map((accBuyer, i) => {
+ 32          const ctcBuyer = accBuyer.attach(backend, ctcInfo);
+ 33          return backend.Buyer(ctcBuyer, {
+ 34            showOutcome: (outcome) => {
+ 35              console.log(`Buyer ${i} saw they ${stdlib.addressEq(outcome, accBuyer) ? 'won' : 'lost'}.`);
+ 36            },
+ 37            shouldBuyTicket : () => Math.random() < 0.5,
+ 38            showPurchase: (addr) => {
+ 39              if (stdlib.addressEq(addr, accBuyer)) {
+ 40                console.log(`Buyer ${i} bought a ticket.`);
+ 41              }
+ 42            }
+ 43          });
+ 44        })
+ 45      ));
+ 46    
+ 47    })();
+```
+
+让我们看看当我们运行这个程序它会看起来怎样：
+
+$ ../reach run
+
+Buyer 0 bought a ticket.
+
+Buyer 3 bought a ticket.
+
+...
+
+Buyer 5 bought a ticket.
+
+Buyer 9 bought a ticket.
+
+Buyer 1 bought a ticket.
+
+Funder saw 0x94CAC1b24C1f7b0EBAD4A51797dE5d59A39910C4 won.
+
+Buyer 5 saw they lost.
+
+Buyer 1 saw they won.
+
+Buyer 6 saw they lost.
+
+Buyer 0 saw they lost.
+
+Buyer 4 saw they lost.
+
+Buyer 8 saw they lost.
+
+Buyer 2 saw they lost.
+
+Buyer 7 saw they lost.
+
+Buyer 3 saw they lost.
+
+Buyer 9 saw they lost.
+
+---
+
+#4.4.7 讨论和接下来的步骤
+
+做得好！
+
+如果你感觉本次研讨有益，请在 [Discord社群](https://discord.gg/AZsgcXu)里告诉我们！
+
+如果你想让这个应用程序更有趣，也许你想扩展这个程序来让N个买家瓜分奖金。查看[FOMO的推广](https://docs.reach.sh/workshop-fomo-generalized.html)来看看我们的方法！
+
